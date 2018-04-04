@@ -1056,17 +1056,24 @@ module EventMachine
       @resultqueue = ::Queue.new
       spawn_threadpool
     end
+    
+    # threads might have finished if they have exceeded EventMachine.defers_per_thread
+    # so spawn threadpool once again. spawn will only create only those thread that have finished
+    until @threadpool.size == @threadpool_size.to_i
+      spawn_threadpool
+    end
 
     @threadqueue << [op||blk,callback,errback]
   end
-
-
+  
   # @private
   def self.spawn_threadpool
     until @threadpool.size == @threadpool_size.to_i
       thread = Thread.new do
+        defers_run = 0
         Thread.current.abort_on_exception = true
-        while true
+        while defers_run <= @defers_per_thread
+          defers_run = defers_run + 1
           begin
             op, cback, eback = *@threadqueue.pop
           rescue ThreadError
@@ -1107,7 +1114,9 @@ module EventMachine
     # Size of the EventMachine.defer threadpool (defaults to 20)
     # @return [Number]
     attr_accessor :threadpool_size
+    attr_accessor :defers_per_thread
     EventMachine.threadpool_size = 20
+    EventMachine.defers_per_thread = 1
   end
 
   # Schedules a proc for execution immediately after the next "turn" through the reactor
